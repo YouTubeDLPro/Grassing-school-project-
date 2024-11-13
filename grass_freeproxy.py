@@ -6,9 +6,23 @@ import time
 import uuid
 import requests
 import shutil
+import threading
 from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
 from fake_useragent import UserAgent
+from flask import Flask, jsonify
+
+# Initialize the Flask app
+app = Flask(__name__)
+
+# Define a basic route for testing
+@app.route('/')
+def index():
+    return jsonify(message="Flask server is running")
+
+# Function to run the Flask server
+def run_flask():
+    app.run(port=5000)
 
 async def connect_to_wss(socks5_proxy, user_id):
     user_agent = UserAgent(os=['windows', 'macos', 'linux'], browsers='chrome')
@@ -129,4 +143,9 @@ async def main():
     await asyncio.gather(*tasks)
 
 if __name__ == '__main__':
+    # Start Flask server in a separate thread
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+
+    # Run the asyncio main function
     asyncio.run(main())
