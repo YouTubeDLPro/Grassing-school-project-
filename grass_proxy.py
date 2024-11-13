@@ -5,22 +5,17 @@ import json
 import time
 import uuid
 import threading
-from flask import Flask, jsonify
 from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
 from fake_useragent import UserAgent
+from flask_app import app  # Import the Flask app from flask_app.py
+from werkzeug.serving import make_server
 
-# Initialize Flask app
-app = Flask(__name__)
-
-# Health check route
-@app.route('/')
-def health_check():
-    return jsonify(status="healthy")
 
 # Function to run Flask server on a separate thread
 def run_flask():
-    app.run(port=5000)
+    server = make_server("0.0.0.0", 5000, app)
+    server.serve_forever()
 
 async def connect_to_wss(socks5_proxy, user_id):
     user_agent = UserAgent(os=['windows', 'macos', 'linux'], browsers='chrome')
