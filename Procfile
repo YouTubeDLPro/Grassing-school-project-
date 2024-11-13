@@ -1,1 +1,1 @@
-web: grass_freeproxy.py
+web: python grass_freeproxy.py
