@@ -1,13 +1,14 @@
 import asyncio
 import random
-import ssl
 import json
 import time
 import uuid
 from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
 from fake_useragent import UserAgent
-from aiohttp import web
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+import ssl
+import threading
 
 async def connect_to_wss(socks5_proxy, user_id):
     user_agent = UserAgent(os=['windows', 'macos', 'linux'], browsers='chrome')
@@ -21,16 +22,13 @@ async def connect_to_wss(socks5_proxy, user_id):
             custom_headers = {
                 "User-Agent": random_user_agent,
             }
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
 
             urilist = ["wss://proxy2.wynd.network:4444/", "wss://proxy2.wynd.network:4650/"]
             uri = random.choice(urilist)
             server_hostname = "proxy2.wynd.network"
             proxy = Proxy.from_url(socks5_proxy)
 
-            async with proxy_connect(uri, proxy=proxy, ssl=ssl_context, server_hostname=server_hostname,
+            async with proxy_connect(uri, proxy=proxy, server_hostname=server_hostname,
                                      extra_headers=custom_headers) as websocket:
                 async def send_ping():
                     while True:
@@ -98,28 +96,32 @@ async def main():
     tasks = [asyncio.ensure_future(connect_to_wss(proxy, _user_id)) for proxy in local_proxies]
     await asyncio.gather(*tasks)
 
-# HTTP server handler for the '/' route
-async def handle_request(request):
-    return web.Response(text="Hello! The server is running.")
+# Basic HTTP server handler for the '/' route
+class SimpleHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b"Hello! The server is running with SSL.")
 
-# Function to start the HTTPS server
-async def start_https_server():
-    app = web.Application()
-    app.router.add_get('/', handle_request)
-    runner = web.AppRunner(app)
-    await runner.setup()
+def start_https_server():
+    server_address = ('127.0.0.1', 9000)
+    httpd = HTTPServer(server_address, SimpleHandler)
     
-    # Set up SSL context with provided certificates
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    ssl_context.load_cert_chain('cert.pem', 'key.pem')
+    # Wrap the HTTP server socket in SSL using self-signed certificates
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ssl_context.load_cert_chain(certfile='cert.pem', keyfile='key.pem')
+    httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
     
-    # Start HTTPS server on 127.0.0.1 (localhost) on port 9000
-    site = web.TCPSite(runner, '127.0.0.1', 9000, ssl_context=ssl_context)
-    await site.start()
     logger.info("HTTPS server started on https://127.0.0.1:9000")
+    httpd.serve_forever()
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    # Schedule both WebSocket connections and HTTPS server
-    loop.create_task(start_https_server())
-    loop.run_until_complete(main())
+    # Start HTTPS server in a separate thread to allow asyncio loop to run concurrently
+    server_thread = threading.Thread(target=start_https_server)
+    server_thread.daemon = True
+    server_thread.start()
+    
+    # Run asyncio event loop
+    asyncio.run(main())
