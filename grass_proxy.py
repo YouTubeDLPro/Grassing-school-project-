@@ -4,18 +4,10 @@ import ssl
 import json
 import time
 import uuid
-import threading
 from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
 from fake_useragent import UserAgent
-from flask_app import app  # Import the Flask app from flask_app.py
-from werkzeug.serving import make_server
-
-
-# Function to run Flask server on a separate thread
-def run_flask():
-    server = make_server("0.0.0.0", 5000, app)
-    server.serve_forever()
+from aiohttp import web
 
 async def connect_to_wss(socks5_proxy, user_id):
     user_agent = UserAgent(os=['windows', 'macos', 'linux'], browsers='chrome')
@@ -106,10 +98,28 @@ async def main():
     tasks = [asyncio.ensure_future(connect_to_wss(proxy, _user_id)) for proxy in local_proxies]
     await asyncio.gather(*tasks)
 
-if __name__ == '__main__':
-    # Start Flask server in a separate thread
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.start()
+# HTTP server handler for the '/' route
+async def handle_request(request):
+    return web.Response(text="Hello! The server is running.")
 
-    # Run the asyncio main function
-    asyncio.run(main())
+# Function to start the HTTPS server
+async def start_https_server():
+    app = web.Application()
+    app.router.add_get('/', handle_request)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Set up SSL context with provided certificates
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain('cert.pem', 'key.pem')
+    
+    # Start HTTPS server on 127.0.0.1 (localhost) on port 9000
+    site = web.TCPSite(runner, '127.0.0.1', 9000, ssl_context=ssl_context)
+    await site.start()
+    logger.info("HTTPS server started on https://127.0.0.1:9000")
+
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    # Schedule both WebSocket connections and HTTPS server
+    loop.create_task(start_https_server())
+    loop.run_until_complete(main())
