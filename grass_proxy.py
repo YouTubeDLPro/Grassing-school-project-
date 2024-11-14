@@ -6,9 +6,7 @@ import uuid
 from loguru import logger
 from websockets_proxy import Proxy, proxy_connect
 from fake_useragent import UserAgent
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-import ssl
-import threading
+from flask import Flask
 
 async def connect_to_wss(socks5_proxy, user_id):
     user_agent = UserAgent(os=['windows', 'macos', 'linux'], browsers='chrome')
@@ -96,30 +94,17 @@ async def main():
     tasks = [asyncio.ensure_future(connect_to_wss(proxy, _user_id)) for proxy in local_proxies]
     await asyncio.gather(*tasks)
 
-# Basic HTTP server handler for the '/' route
-class SimpleHandler(SimpleHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b"Hello! The server is running with SSL.")
+# Set up a simple Flask server
+app = Flask(__name__)
 
-def start_https_server():
-    server_address = ('127.0.0.1', 9000)
-    httpd = HTTPServer(server_address, SimpleHandler)
-    
-    # Wrap the HTTP server socket in SSL using self-signed certificates
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ssl_context.load_cert_chain(certfile='cert.pem', keyfile='key.pem')
-    httpd.socket = ssl_context.wrap_socket(httpd.socket, server_side=True)
-    
-    logger.info("HTTPS server started on https://127.0.0.1:9000")
-    httpd.serve_forever()
+@app.route('/')
+def home():
+    return "Hello! The server is running without SSL."
 
 if __name__ == '__main__':
-    # Start HTTPS server in a separate thread to allow asyncio loop to run concurrently
-    server_thread = threading.Thread(target=start_https_server)
+    # Start Flask server in a separate thread
+    from threading import Thread
+    server_thread = Thread(target=lambda: app.run(host='127.0.0.1', port=9000, debug=False))
     server_thread.daemon = True
     server_thread.start()
     
