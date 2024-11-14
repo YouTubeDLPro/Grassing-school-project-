@@ -4,4 +4,3 @@ loguru
 websockets_proxy
 fake_useragent
 websockets==12.0
-aiohttp==3.8.4
